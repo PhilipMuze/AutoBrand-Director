@@ -58,26 +58,33 @@ class _CampaignPageState extends State<CampaignPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("AutoBrand Director")),
+      appBar: AppBar(
+        centerTitle: true,
+        title: const Text("AutoBrand Director"),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
+          spacing: 20,
           children: [
+            //input
             TextField(
               controller: _controller,
               maxLines: 3,
               decoration: const InputDecoration(
+                icon: Icon(Icons.campaign),
                 labelText: "Enter Campaign Brief",
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: _loading ? null : _generate,
-              child: const Text("Generate Campaign"),
-            ),
-            const SizedBox(height: 20),
-            if (_loading) const CircularProgressIndicator(),
+            //Generate button
+            _loading
+                ? const SizedBox.shrink()
+                : ElevatedButton(
+                    onPressed: _loading ? null : _generate,
+                    child: const Text("Generate Campaign"),
+                  ),
+            //Results
             Expanded(
               child: ListView.builder(
                 itemCount: _parts.length,

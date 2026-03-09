@@ -1,9 +1,9 @@
-import express from "express";
-import cors from "cors";
-import { GoogleGenAI } from "@google/genai";
-import { v4 as uuidv4 } from "uuid";
 import { Storage } from "@google-cloud/storage";
+import { GoogleGenAI } from "@google/genai";
+import cors from "cors";
+import express from "express";
 import admin from "firebase-admin";
+import { v4 as uuidv4 } from "uuid";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -20,7 +20,7 @@ const genAI = new GoogleGenAI({
 });
 
 app.post("/generate-campaign", async (req, res) => {
-    const { prompt } = req.body;
+    const { uid, prompt } = req.body;
     const sessionId = uuidv4();
 
     try {
@@ -60,6 +60,7 @@ ${prompt}
         const output = response.candidates[0].content.parts;
 
         await db.collection("campaigns").doc(sessionId).set({
+            uid,
             prompt,
             output,
             createdAt: new Date()
