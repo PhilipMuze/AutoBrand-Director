@@ -7,11 +7,15 @@ class TextBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: SelectableText(text, style: const TextStyle(fontSize: 16)),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: SelectableText(
+        text,
+        style: const TextStyle(
+          fontSize: 15,
+          color: Colors.white,
+          height: 1.6,
+        ),
       ),
     );
   }

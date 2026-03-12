@@ -1,80 +1,225 @@
-import { Storage } from "@google-cloud/storage";
+import "dotenv/config";
 import { GoogleGenAI } from "@google/genai";
+import { Storage } from "@google-cloud/storage";
 import cors from "cors";
 import express from "express";
 import admin from "firebase-admin";
 import { v4 as uuidv4 } from "uuid";
 
+// ── Firebase & Cloud Setup ──────────────────────────────────────────────────
 admin.initializeApp();
 const db = admin.firestore();
-
 const storage = new Storage();
-const bucket = storage.bucket(process.env.BUCKET_NAME);
+const bucket = storage.bucket(process.env.BUCKET_NAME || "pgmhackathons.firebasestorage.app");
 
+// ── Express ─────────────────────────────────────────────────────────────────
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "20mb" }));
 
+// ── Gemini 2.0 Flash – Interleaved Text + Image Generation ─────────────────
 const genAI = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY
+    apiKey: process.env.GEMINI_API_KEY,
 });
 
+const CAMPAIGN_SYSTEM_PROMPT = `You are AutoBrand Director — an elite AI Creative Director.
+
+When given a campaign brief you MUST produce a COMPLETE marketing campaign that 
+seamlessly interleaves text AND generated images in a single response.
+
+Your response must include ALL of the following sections with actual generated 
+images inline (not image descriptions):
+
+1. **Campaign Slogan & Tagline** – bold, memorable, on-brand
+2. **Hero Visual** – GENERATE an actual image that captures the brand essence
+3. **Brand Story** – a short narrative (2-3 paragraphs)
+4. **Social Media Post Visual** – GENERATE an Instagram-ready image
+5. **Instagram Caption** with relevant hashtags
+6. **30-Second Video Storyboard** – describe 3-4 key frames
+7. **Voiceover Script** – the narration for the video
+
+Make the generated images professional, vibrant, and visually stunning.
+Weave the text and images together fluidly — this is interleaved multimodal output.`;
+
+// ── Helper: Upload base64 image to Cloud Storage ────────────────────────────
+async function uploadImageToStorage(base64Data, mimeType, sessionId, index) {
+    const extension = mimeType.split("/")[1] || "png";
+    const filename = `campaigns/${sessionId}/generated_${index}.${extension}`;
+    const file = bucket.file(filename);
+
+    const buffer = Buffer.from(base64Data, "base64");
+    await file.save(buffer, {
+        metadata: { contentType: mimeType },
+        public: true,
+    });
+
+    return `https://storage.googleapis.com/${bucket.name}/${filename}`;
+}
+
+// ── Helper: Parse Gemini response parts into a storable format ──────────────
+async function parseResponseParts(parts, sessionId) {
+    const output = [];
+    let imageIndex = 0;
+
+    for (const part of parts) {
+        if (part.text) {
+            output.push({ text: part.text });
+        } else if (part.inlineData) {
+            try {
+                const url = await uploadImageToStorage(
+                    part.inlineData.data,
+                    part.inlineData.mimeType,
+                    sessionId,
+                    imageIndex++
+                );
+                output.push({
+                    inlineData: {
+                        data: part.inlineData.data,
+                        mimeType: part.inlineData.mimeType,
+                    },
+                    storageUrl: url,
+                });
+            } catch (err) {
+                console.error("Image upload failed:", err.message);
+                // Still include the inline data even if upload fails
+                output.push({
+                    inlineData: {
+                        data: part.inlineData.data,
+                        mimeType: part.inlineData.mimeType,
+                    },
+                });
+            }
+        }
+    }
+
+    return output;
+}
+
+// ── POST /generate-campaign ─────────────────────────────────────────────────
 app.post("/generate-campaign", async (req, res) => {
-    const { uid, prompt } = req.body;
+    const { uid, prompt, image_base64 } = req.body;
+
+    if (!uid) {
+        return res.status(400).json({ error: "uid is required" });
+    }
+    if (!prompt) {
+        return res.status(400).json({ error: "prompt is required" });
+    }
+
     const sessionId = uuidv4();
 
     try {
-        // genAI.models.generateContentStream()
+        // Build the user content parts
+        const userParts = [{ text: prompt }];
+
+        // Add image part if provided (multimodal input)
+        if (image_base64) {
+            let base64str = image_base64;
+            let mimeType = "image/jpeg";
+            if (image_base64.startsWith("data:")) {
+                const segments = image_base64.split(",");
+                mimeType = segments[0].split(":")[1].split(";")[0];
+                base64str = segments[1];
+            }
+            userParts.push({
+                inlineData: {
+                    data: base64str,
+                    mimeType: mimeType,
+                },
+            });
+        }
+
+        // Call Gemini 2.0 Flash with interleaved text + image output
         const response = await genAI.models.generateContent({
-            model: "gemini-1.5-pro",
+            model: "gemini-2.0-flash-exp",
             contents: [
                 {
                     role: "user",
-                    parts: [
-                        {
-                            text: `
-You are an elite Creative Director AI.
-
-Generate a full marketing campaign with:
-- Campaign slogan
-- Brand story
-- Inline generated image description
-- 30-second video storyboard
-- Voiceover script
-- Instagram caption with hashtags
-
-Use interleaved multimodal output.
-User brief:
-${prompt}
-`
-                        }
-                    ]
-                }
+                    parts: userParts,
+                },
             ],
-            generationConfig: {
+            config: {
+                systemInstruction: CAMPAIGN_SYSTEM_PROMPT,
+                responseModalities: ["Text", "Image"],
                 temperature: 0.8,
-                maxOutputTokens: 4096
-            }
+                maxOutputTokens: 8192,
+            },
         });
 
-        const output = response.candidates[0].content.parts;
+        // Parse response — will contain interleaved text and generated images
+        const rawParts = response.candidates?.[0]?.content?.parts || [];
+        const output = await parseResponseParts(rawParts, sessionId);
 
-        await db.collection("campaigns").doc(sessionId).set({
+        const campaignData = {
             uid,
             prompt,
             output,
-            createdAt: new Date()
-        });
+            hasImage: !!image_base64,
+            hasGeneratedImages: output.some((p) => p.inlineData),
+            model: "gemini-2.0-flash-exp",
+            createdAt: new Date().toISOString(),
+        };
+
+        await db.collection("campaigns").doc(sessionId).set(campaignData);
 
         res.json({
             sessionId,
-            output
+            ...campaignData,
         });
-
     } catch (error) {
-        console.error(error);
-        res.status(500).send("Generation failed");
+        console.error("Generation failed:", error);
+        res.status(500).json({
+            error: "Generation failed",
+            details: error.message,
+        });
     }
 });
 
-app.listen(8080, () => console.log("Server running"));
+// ── GET /campaigns/:uid ─────────────────────────────────────────────────────
+app.get("/campaigns/:uid", async (req, res) => {
+    const { uid } = req.params;
+
+    if (!uid) {
+        return res.status(400).json({ error: "uid is required" });
+    }
+
+    try {
+        const snapshot = await db
+            .collection("campaigns")
+            .where("uid", "==", uid)
+            .orderBy("createdAt", "desc")
+            .get();
+
+        const campaigns = [];
+        snapshot.forEach((doc) => {
+            campaigns.push({
+                id: doc.id,
+                ...doc.data(),
+            });
+        });
+
+        res.json(campaigns);
+    } catch (error) {
+        console.error("Error fetching campaigns:", error);
+        res.status(500).json({
+            error: "Failed to fetch campaigns",
+            details: error.message,
+        });
+    }
+});
+
+// ── Health check ────────────────────────────────────────────────────────────
+app.get("/", (_req, res) => {
+    res.json({
+        service: "AutoBrand Director API",
+        status: "healthy",
+        model: "gemini-2.0-flash-exp",
+        version: "2.0.0",
+    });
+});
+
+// ── Start server ────────────────────────────────────────────────────────────
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () =>
+    console.log(`🚀 AutoBrand Director API running on port ${PORT}`)
+);

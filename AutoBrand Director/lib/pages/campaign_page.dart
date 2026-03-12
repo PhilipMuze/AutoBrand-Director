@@ -1,11 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
-import '../models/content_part.dart';
+import '../models/campaign_message.dart';
 import '../services/api_service.dart';
-import '../widgets/image_block.dart';
-import '../widgets/text_block.dart';
+import '../widgets/chat_bubble.dart';
 
 class CampaignPage extends StatefulWidget {
   const CampaignPage({super.key});
@@ -16,81 +18,320 @@ class CampaignPage extends StatefulWidget {
 
 class _CampaignPageState extends State<CampaignPage> {
   final TextEditingController _controller = TextEditingController();
-  final ApiService _api = ApiService("https://YOUR_CLOUD_RUN_URL");
+  final ScrollController _scrollController = ScrollController();
+  // TODO: Change to your deployed Cloud Run URL after running deploy.sh
+  final ApiService _api = ApiService("http://10.0.2.2:8080");
 
-  List<ContentPart> _parts = [];
+  final List<CampaignMessage> _messages = [];
   bool _loading = false;
+  XFile? _selectedImage;
+  String? _uid;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserAndCampaigns();
+  }
+
+  Future<void> _loadUserAndCampaigns() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _uid = user.uid;
+      setState(() {
+        _loading = true;
+      });
+      try {
+        final history = await _api.fetchCampaigns(_uid!);
+        setState(() {
+          _messages.addAll(history);
+        });
+        _scrollToBottom();
+      } catch (e) {
+        debugPrint("Error fetching history: $e");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("Error fetching history: $e")));
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _loading = false;
+          });
+        }
+      }
+    }
+  }
+
+  Future<void> _pickImage() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    setState(() {
+      _selectedImage = image;
+    });
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
 
   Future<void> _generate() async {
+    if (_uid == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text("Must be logged in.")));
+      return;
+    }
+
+    final text = _controller.text;
+    if (text.trim().isEmpty) return;
+
+    String? base64Image;
+    if (_selectedImage != null) {
+      final bytes = await File(_selectedImage!.path).readAsBytes();
+      base64Image = base64Encode(bytes);
+    }
+
     setState(() {
+      _messages.add(CampaignMessage(
+        text: text,
+        base64Image: base64Image,
+        isUser: true,
+      ));
+      _messages.add(CampaignMessage(isUser: false, isThinking: true));
       _loading = true;
-      _parts = [];
+      _controller.clear();
+      _selectedImage = null;
     });
+    _scrollToBottom();
 
     try {
-      final result = await _api.generateCampaign(_controller.text);
+      final result =
+          await _api.generateCampaign(_uid!, text, imageBase64: base64Image);
 
       setState(() {
-        _parts = result;
+        _messages.removeLast(); // Remove thinking indicator
+        _messages.add(CampaignMessage(
+          isUser: false,
+          parts: result,
+        ));
       });
+      _scrollToBottom();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      setState(() {
+        _messages.removeLast(); // Remove thinking indicator
+      });
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Error: $e")));
     } finally {
       setState(() => _loading = false);
     }
   }
 
-  Widget _buildPart(ContentPart part) {
-    if (part.text != null) {
-      return TextBlock(text: part.text!);
-    }
-
-    if (part.base64Data != null) {
-      return ImageBlock(bytes: base64Decode(part.base64Data!));
-    }
-
-    return const SizedBox.shrink();
+  void _signOut() async {
+    await FirebaseAuth.instance.signOut();
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
         centerTitle: true,
-        title: const Text("AutoBrand Director"),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          spacing: 20,
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            //input
-            TextField(
-              controller: _controller,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                icon: Icon(Icons.campaign),
-                labelText: "Enter Campaign Brief",
-                border: OutlineInputBorder(),
-              ),
+            ShaderMask(
+              shaderCallback: (bounds) => const LinearGradient(
+                colors: [Color(0xFF6366F1), Color(0xFFA855F7)],
+              ).createShader(bounds),
+              child: const Icon(Icons.auto_awesome, color: Colors.white, size: 24),
             ),
-            //Generate button
-            _loading
-                ? const SizedBox.shrink()
-                : ElevatedButton(
-                    onPressed: _loading ? null : _generate,
-                    child: const Text("Generate Campaign"),
+            const SizedBox(width: 8),
+            const Text(
+              "AutoBrand Director",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, size: 20),
+            tooltip: "Sign out",
+            onPressed: _signOut,
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Empty state
+            if (_messages.isEmpty && !_loading)
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ShaderMask(
+                        shaderCallback: (bounds) => const LinearGradient(
+                          colors: [Color(0xFF6366F1), Color(0xFFA855F7), Color(0xFFEC4899)],
+                        ).createShader(bounds),
+                        child: const Icon(Icons.campaign, color: Colors.white, size: 64),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        "Your AI Creative Director",
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Describe your brand & get a full campaign\nwith AI-generated visuals ✨",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.5),
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
                   ),
-            //Results
-            Expanded(
-              child: ListView.builder(
-                itemCount: _parts.length,
-                itemBuilder: (context, index) {
-                  return _buildPart(_parts[index]);
-                },
+                ),
+              ),
+            // Chat history
+            if (_messages.isNotEmpty)
+              Expanded(
+                child: ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _messages.length,
+                  itemBuilder: (context, index) {
+                    return ChatBubble(message: _messages[index]);
+                  },
+                ),
+              ),
+            // Image Preview area
+            if (_selectedImage != null)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                alignment: Alignment.centerLeft,
+                child: Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        File(_selectedImage!.path),
+                        height: 80,
+                        width: 80,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: GestureDetector(
+                        onTap: () => setState(() => _selectedImage = null),
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.close,
+                              color: Colors.white, size: 20),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            // Input Area
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A2E),
+                border: Border(
+                  top: BorderSide(
+                    color: Colors.white.withValues(alpha: 0.05),
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.05),
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.add_photo_alternate_outlined,
+                          color: Color(0xFF6366F1)),
+                      onPressed: _loading ? null : _pickImage,
+                      tooltip: "Attach brand image",
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      maxLines: 3,
+                      minLines: 1,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: _messages.isEmpty
+                            ? "Describe your brand & campaign brief..."
+                            : "Refine your campaign...",
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
+                        filled: true,
+                        fillColor: Colors.white.withValues(alpha: 0.05),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                      ),
+                      onSubmitted: (_) => _loading ? null : _generate(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF6366F1), Color(0xFFA855F7)],
+                      ),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF6366F1).withValues(alpha: 0.4),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: IconButton(
+                      icon: _loading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.send, color: Colors.white),
+                      onPressed: _loading ? null : _generate,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
