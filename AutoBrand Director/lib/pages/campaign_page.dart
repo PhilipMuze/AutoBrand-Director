@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:firebase_auth/firebase_auth.dart';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -19,9 +19,9 @@ class CampaignPage extends StatefulWidget {
 class _CampaignPageState extends State<CampaignPage> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  // TODO: Change to your deployed Cloud Run URL after running deploy.sh
-  final ApiService _api = ApiService("http://10.0.2.2:8080");
-
+  final ApiService _api = ApiService(
+    "",
+  );
   final List<CampaignMessage> _messages = [];
   bool _loading = false;
   XFile? _selectedImage;
@@ -49,8 +49,9 @@ class _CampaignPageState extends State<CampaignPage> {
       } catch (e) {
         debugPrint("Error fetching history: $e");
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text("Error fetching history: $e")));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text("Error fetching history: $e")));
         }
       } finally {
         if (mounted) {
@@ -84,8 +85,9 @@ class _CampaignPageState extends State<CampaignPage> {
 
   Future<void> _generate() async {
     if (_uid == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("Must be logged in.")));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Must be logged in.")));
       return;
     }
 
@@ -99,11 +101,9 @@ class _CampaignPageState extends State<CampaignPage> {
     }
 
     setState(() {
-      _messages.add(CampaignMessage(
-        text: text,
-        base64Image: base64Image,
-        isUser: true,
-      ));
+      _messages.add(
+        CampaignMessage(text: text, base64Image: base64Image, isUser: true),
+      );
       _messages.add(CampaignMessage(isUser: false, isThinking: true));
       _loading = true;
       _controller.clear();
@@ -112,15 +112,15 @@ class _CampaignPageState extends State<CampaignPage> {
     _scrollToBottom();
 
     try {
-      final result =
-          await _api.generateCampaign(_uid!, text, imageBase64: base64Image);
+      final result = await _api.generateCampaign(
+        _uid!,
+        text,
+        imageBase64: base64Image,
+      );
 
       setState(() {
         _messages.removeLast(); // Remove thinking indicator
-        _messages.add(CampaignMessage(
-          isUser: false,
-          parts: result,
-        ));
+        _messages.add(CampaignMessage(isUser: false, parts: result));
       });
       _scrollToBottom();
     } catch (e) {
@@ -128,8 +128,9 @@ class _CampaignPageState extends State<CampaignPage> {
       setState(() {
         _messages.removeLast(); // Remove thinking indicator
       });
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Error: $e")));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error: $e")));
     } finally {
       setState(() => _loading = false);
     }
@@ -144,8 +145,19 @@ class _CampaignPageState extends State<CampaignPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         centerTitle: true,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F0F1A).withValues(alpha: 0.7),
+            border: Border(
+              bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
+            ),
+          ),
+        ),
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -153,7 +165,11 @@ class _CampaignPageState extends State<CampaignPage> {
               shaderCallback: (bounds) => const LinearGradient(
                 colors: [Color(0xFF6366F1), Color(0xFFA855F7)],
               ).createShader(bounds),
-              child: const Icon(Icons.auto_awesome, color: Colors.white, size: 24),
+              child: const Icon(
+                Icons.auto_awesome,
+                color: Colors.white,
+                size: 24,
+              ),
             ),
             const SizedBox(width: 8),
             const Text(
@@ -170,171 +186,259 @@ class _CampaignPageState extends State<CampaignPage> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Empty state
-            if (_messages.isEmpty && !_loading)
-              Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+      body: Container(
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: NetworkImage(
+              'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=1974&auto=format&fit=crop',
+            ),
+            fit: BoxFit.cover,
+            colorFilter: ColorFilter.mode(Colors.black87, BlendMode.darken),
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Empty state
+              if (_messages.isEmpty && !_loading)
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.05),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.1),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(
+                                  0xFF6366F1,
+                                ).withValues(alpha: 0.2),
+                                blurRadius: 40,
+                                spreadRadius: -10,
+                              ),
+                            ],
+                          ),
+                          child: ShaderMask(
+                            shaderCallback: (bounds) => const LinearGradient(
+                              colors: [
+                                Color(0xFF6366F1),
+                                Color(0xFFA855F7),
+                                Color(0xFFEC4899),
+                              ],
+                            ).createShader(bounds),
+                            child: const Icon(
+                              Icons.auto_awesome_mosaic_rounded,
+                              color: Colors.white,
+                              size: 72,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          "Your AI Creative Director",
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          "Describe your brand & get a full campaign\nwith AI-generated visuals ✨",
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.5),
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              // Chat history
+              if (_messages.isNotEmpty)
+                Expanded(
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _messages.length,
+                    itemBuilder: (context, index) {
+                      return ChatBubble(message: _messages[index]);
+                    },
+                  ),
+                ),
+              // Image Preview area
+              if (_selectedImage != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  alignment: Alignment.centerLeft,
+                  child: Stack(
                     children: [
-                      ShaderMask(
-                        shaderCallback: (bounds) => const LinearGradient(
-                          colors: [Color(0xFF6366F1), Color(0xFFA855F7), Color(0xFFEC4899)],
-                        ).createShader(bounds),
-                        child: const Icon(Icons.campaign, color: Colors.white, size: 64),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        "Your AI Creative Director",
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.file(
+                          File(_selectedImage!.path),
+                          height: 80,
+                          width: 80,
+                          fit: BoxFit.cover,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        "Describe your brand & get a full campaign\nwith AI-generated visuals ✨",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.5),
-                          fontSize: 14,
+                      Positioned(
+                        right: 0,
+                        top: 0,
+                        child: GestureDetector(
+                          onTap: () => setState(() => _selectedImage = null),
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              color: Colors.black54,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.close,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-              ),
-            // Chat history
-            if (_messages.isNotEmpty)
-              Expanded(
-                child: ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _messages.length,
-                  itemBuilder: (context, index) {
-                    return ChatBubble(message: _messages[index]);
-                  },
-                ),
-              ),
-            // Image Preview area
-            if (_selectedImage != null)
+              // Input Area
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                alignment: Alignment.centerLeft,
-                child: Stack(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F0F1A).withValues(alpha: 0.85),
+                  border: Border(
+                    top: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.08),
+                    ),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.4),
+                      blurRadius: 20,
+                      offset: const Offset(0, -5),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.file(
-                        File(_selectedImage!.path),
-                        height: 80,
-                        width: 80,
-                        fit: BoxFit.cover,
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4.0),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.1),
+                          ),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.add_photo_alternate_rounded,
+                            color: Color(0xFF818CF8),
+                          ),
+                          onPressed: _loading ? null : _pickImage,
+                          tooltip: "Attach brand image",
+                        ),
                       ),
                     ),
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: GestureDetector(
-                        onTap: () => setState(() => _selectedImage = null),
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            color: Colors.black54,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.close,
-                              color: Colors.white, size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        maxLines: 4,
+                        minLines: 1,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
                         ),
+                        decoration: InputDecoration(
+                          hintText: _messages.isEmpty
+                              ? "Describe your brand & campaign..."
+                              : "Refine your campaign...",
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            borderSide: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.1),
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            borderSide: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.1),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF818CF8),
+                            ),
+                          ),
+                          filled: true,
+                          fillColor: const Color(
+                            0xFF1E1E2E,
+                          ).withValues(alpha: 0.8),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 14,
+                          ),
+                        ),
+                        onSubmitted: (_) => _loading ? null : _generate(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF6366F1), Color(0xFFA855F7)],
+                        ),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(
+                              0xFF6366F1,
+                            ).withValues(alpha: 0.4),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: IconButton(
+                        icon: _loading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.send_rounded,
+                                color: Colors.white,
+                              ),
+                        onPressed: _loading ? null : _generate,
                       ),
                     ),
                   ],
                 ),
               ),
-            // Input Area
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1A2E),
-                border: Border(
-                  top: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.05),
-                  ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.05),
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      icon: const Icon(Icons.add_photo_alternate_outlined,
-                          color: Color(0xFF6366F1)),
-                      onPressed: _loading ? null : _pickImage,
-                      tooltip: "Attach brand image",
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      maxLines: 3,
-                      minLines: 1,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        hintText: _messages.isEmpty
-                            ? "Describe your brand & campaign brief..."
-                            : "Refine your campaign...",
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
-                        ),
-                        filled: true,
-                        fillColor: Colors.white.withValues(alpha: 0.05),
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
-                      ),
-                      onSubmitted: (_) => _loading ? null : _generate(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF6366F1), Color(0xFFA855F7)],
-                      ),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF6366F1).withValues(alpha: 0.4),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: IconButton(
-                      icon: _loading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.send, color: Colors.white),
-                      onPressed: _loading ? null : _generate,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

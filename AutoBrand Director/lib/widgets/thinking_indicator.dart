@@ -36,13 +36,15 @@ class _ThinkingIndicatorState extends State<ThinkingIndicator>
       child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.auto_awesome, color: Colors.blueAccent, size: 20),
+          Icon(Icons.auto_awesome, color: Color(0xFF818CF8), size: 20),
           SizedBox(width: 8),
           Text(
             "Director is thinking...",
             style: TextStyle(
-              color: Colors.blueGrey,
+              color: Colors.white60,
               fontStyle: FontStyle.italic,
+              fontSize: 14,
+              letterSpacing: 0.5,
             ),
           ),
         ],

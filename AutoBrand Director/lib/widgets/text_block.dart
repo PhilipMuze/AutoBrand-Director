@@ -11,10 +11,12 @@ class TextBlock extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: SelectableText(
         text,
-        style: const TextStyle(
-          fontSize: 15,
-          color: Colors.white,
+        style: TextStyle(
+          fontSize: 15.5,
+          color: Colors.white.withValues(alpha: 0.95),
           height: 1.6,
+          letterSpacing: 0.2,
+          fontWeight: FontWeight.w400,
         ),
       ),
     );

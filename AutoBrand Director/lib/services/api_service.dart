@@ -40,7 +40,7 @@ class ApiService {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to fetch campaigns: ${response.statusCode}');
+      throw Exception('Failed to fetch campaigns: ${response.statusCode}: ${response.body}');
     }
 
     final List data = jsonDecode(response.body);

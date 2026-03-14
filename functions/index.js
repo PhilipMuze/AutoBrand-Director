@@ -1,7 +1,7 @@
-import "dotenv/config";
-import { GoogleGenAI } from "@google/genai";
 import { Storage } from "@google-cloud/storage";
+import { GoogleGenAI } from "@google/genai";
 import cors from "cors";
+import "dotenv/config";
 import express from "express";
 import admin from "firebase-admin";
 import { v4 as uuidv4 } from "uuid";
@@ -10,14 +10,16 @@ import { v4 as uuidv4 } from "uuid";
 admin.initializeApp();
 const db = admin.firestore();
 const storage = new Storage();
-const bucket = storage.bucket(process.env.BUCKET_NAME || "pgmhackathons.firebasestorage.app");
+const bucket = storage.bucket(
+    process.env.BUCKET_NAME
+);
 
 // ── Express ─────────────────────────────────────────────────────────────────
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "20mb" }));
 
-// ── Gemini 2.0 Flash – Interleaved Text + Image Generation ─────────────────
+// ── Gemini Setup ─────────────────────────────────────────────────────────────
 const genAI = new GoogleGenAI({
     apiKey: process.env.GEMINI_API_KEY,
 });
@@ -57,6 +59,7 @@ async function uploadImageToStorage(base64Data, mimeType, sessionId, index) {
 }
 
 // ── Helper: Parse Gemini response parts into a storable format ──────────────
+// Only stores storageUrl (no raw base64) to avoid Firestore size/nesting limits
 async function parseResponseParts(parts, sessionId) {
     const output = [];
     let imageIndex = 0;
@@ -72,22 +75,14 @@ async function parseResponseParts(parts, sessionId) {
                     sessionId,
                     imageIndex++
                 );
+                // ✅ Only store the URL + mimeType, never raw base64
                 output.push({
-                    inlineData: {
-                        data: part.inlineData.data,
-                        mimeType: part.inlineData.mimeType,
-                    },
                     storageUrl: url,
+                    mimeType: part.inlineData.mimeType,
                 });
             } catch (err) {
                 console.error("Image upload failed:", err.message);
-                // Still include the inline data even if upload fails
-                output.push({
-                    inlineData: {
-                        data: part.inlineData.data,
-                        mimeType: part.inlineData.mimeType,
-                    },
-                });
+                // Skip failed images rather than storing broken base64
             }
         }
     }
@@ -129,9 +124,9 @@ app.post("/generate-campaign", async (req, res) => {
             });
         }
 
-        // Call Gemini 2.0 Flash with interleaved text + image output
+        // Call Gemini with interleaved text + image output
         const response = await genAI.models.generateContent({
-            model: "gemini-2.0-flash-exp",
+            model: "gemini-3.1-flash-image-preview",
             contents: [
                 {
                     role: "user",
@@ -140,13 +135,13 @@ app.post("/generate-campaign", async (req, res) => {
             ],
             config: {
                 systemInstruction: CAMPAIGN_SYSTEM_PROMPT,
-                responseModalities: ["Text", "Image"],
+                responseModalities: ["TEXT", "IMAGE"],
                 temperature: 0.8,
                 maxOutputTokens: 8192,
             },
         });
 
-        // Parse response — will contain interleaved text and generated images
+        // Parse response — interleaved text and generated images
         const rawParts = response.candidates?.[0]?.content?.parts || [];
         const output = await parseResponseParts(rawParts, sessionId);
 
@@ -155,8 +150,8 @@ app.post("/generate-campaign", async (req, res) => {
             prompt,
             output,
             hasImage: !!image_base64,
-            hasGeneratedImages: output.some((p) => p.inlineData),
-            model: "gemini-2.0-flash-exp",
+            hasGeneratedImages: output.some((p) => p.storageUrl),
+            model: "gemini-3.1-flash-image-preview",
             createdAt: new Date().toISOString(),
         };
 
@@ -213,7 +208,7 @@ app.get("/", (_req, res) => {
     res.json({
         service: "AutoBrand Director API",
         status: "healthy",
-        model: "gemini-2.0-flash-exp",
+        model: "gemini-3.1-flash-image-preview",
         version: "2.0.0",
     });
 });
