@@ -20,7 +20,7 @@ class _CampaignPageState extends State<CampaignPage> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ApiService _api = ApiService(
-    "",
+    "https://autobrand-director-api-ulpi7b2tta-uc.a.run.app",
   );
   final List<CampaignMessage> _messages = [];
   bool _loading = false;
