@@ -1,1 +1,0 @@
-For instructions on how to get started take a look at the [onboarding issue](../../work_items/1) in this project
